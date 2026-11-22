@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/token-radar-01/risadeden76/token-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/risadeden76/token-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-Token Radar ranks the pre-token protocols DefiLlama tracks by what a launch would be worth, calibrated on the snapshot itself: each category's multiple is the median market-cap-to-TVL ratio of its launched peers. A static dashboard shows the ranked board, a farm plan for every protocol, and the calibration behind every number.
+Token Radar ranks the pre-token protocols DefiLlama tracks by what a launch would be worth, calibrated on the snapshot itself: each category's multiple is the geometric-mean market-cap-to-TVL ratio of its launched peers (ratios are log-normal, so the geometric mean is the right centre; backtested on the snapshot's 128 launched protocols it predicts their actual market cap within 2x for about 27% of them). A static dashboard shows the ranked board, an eight-step farm plan for every protocol, and the calibration behind every number.
 
 ## Run it
 

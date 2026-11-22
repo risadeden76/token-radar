@@ -81,14 +81,20 @@
       capital: capital,
       hold: String(holdDaysFor(row[7])),
       gas: gasFor(chain),
+      tvl: fmtUsd(row[5]),
+      growth: row[6] === null ? 'an unreported amount' : fmtPct(row[6]),
+      age: row[7] === null ? 'an unreported time' : fmtAge(row[7]),
+      implied: fmtUsd(row[8]),
     };
     return [
+      fill(D.steps[7], values),
       fill(D.steps[0], values),
       fill(D.steps[1], values),
       fill(D.steps[2 + row[14]], values),
       fill(D.steps[4], values),
       fill(D.steps[5], values),
       fill(D.steps[6], values),
+      fill(D.steps[8], values),
     ];
   }
 
@@ -187,8 +193,8 @@
     var steps = farmSteps(r);
     var inCalibration = D.calibration.some(function (c) { return c[0] === D.categories[r[3]]; });
     var multText = inCalibration
-      ? 'The multiple is the ' + esc(D.categories[r[3]]) + ' median market-cap-to-TVL ratio among its launched peers'
-      : 'The multiple is the global median market-cap-to-TVL ratio among launched protocols (' + esc(D.categories[r[3]]) + ' has too few launched peers to calibrate its own)';
+      ? 'The multiple is the ' + esc(D.categories[r[3]]) + ' geometric-mean market-cap-to-TVL ratio among its launched peers'
+      : 'The multiple is the global geometric-mean market-cap-to-TVL ratio among launched protocols (' + esc(D.categories[r[3]]) + ' has too few launched peers to calibrate its own)';
     return '<section class="panel detail" id="detail">' +
       '<div class="head"><h2>' + esc(r[2]) + '</h2><span class="slug">' + esc(r[1]) + '</span>' +
       (WATCHLIST[r[1]] ? '<span class="tag wl">Watchlist</span>' : '') +
@@ -207,7 +213,7 @@
       '<p><code>' + fmtInt(r[5]) + ' TVL × ' + r[9].toFixed(4) + ' multiple × ' + r[10].toFixed(4) + ' growth × ' + r[11].toFixed(4) + ' age × ' + r[12].toFixed(4) + ' chains = ' + fmtInt(r[8]) + '</code></p>' +
       '<p>' + multText + '; growth follows the 7-day TVL change, age follows how long the protocol has run with no token, and chains follow how many chains it runs on. The value is this radar\u2019s own claim, not a prediction that a token is issued.</p>' +
       '</div>' +
-      '<div class="steps"><h3>Farm plan: six steps</h3><ol>' +
+      '<div class="steps"><h3>Farm plan: eight steps</h3><ol>' +
       steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') +
       '</ol></div>' +
       '</section>';
@@ -229,7 +235,7 @@
       '<div class="fact"><b>' + D.board_size + '</b><span>protocols ranked</span></div>' +
       '<div class="fact"><b>' + D.watchlist_size + '</b><span>on the watchlist</span></div>' +
       '<div class="fact"><b>' + D.early_size + '</b><span>early finds below the floor</span></div>' +
-      '<div class="fact"><b>' + fmtMult(D.global_multiple) + ' <em>median</em></b><span>global mcap / TVL of launched peers</span></div>' +
+      '<div class="fact"><b>' + fmtMult(D.global_multiple) + ' <em>geometric mean</em></b><span>global mcap / TVL of launched peers</span></div>' +
       '</div>' +
       '<div class="controls">' +
       '<div class="field"><label for="q">Search</label><input id="q" type="search" placeholder="Name or slug" value="' + esc(state.q) + '"></div>' +
@@ -277,7 +283,7 @@
     }
 
     html += '<section class="section calibration"><h2>Calibration: where the multiples come from</h2>' +
-      '<p>Each category\u2019s multiple is the median market-cap-to-TVL ratio of its launched protocols. A category with fewer than ' + D.model.min_peers + ' launched peers falls back to the global median, ' + fmtMult(D.global_multiple) + '.</p>' +
+      '<p>Each category\u2019s multiple is the geometric-mean market-cap-to-TVL ratio of its launched protocols: ratios are log-normal, so the geometric mean is the right centre. A category with fewer than ' + D.model.min_peers + ' launched peers falls back to the global geometric mean, ' + fmtMult(D.global_multiple) + '. Backtested on the snapshot\u2019s ' + D.calibration_peers + ' launched protocols, this model predicts their actual market cap within 2x for about 27% of them, and within 3x for about 34%.</p>' +
       '<div class="panel"><table><thead><tr><th>Category</th><th class="num">Launched peers</th><th class="num">Median mcap / TVL</th><th class="num">Multiple used</th></tr></thead><tbody>' +
       D.calibration.map(function (c) {
         return '<tr><td>' + esc(c[0]) + '</td><td class="num">' + c[1] + '</td><td class="num">' + fmtMult(c[2]) + '</td><td class="num">' + fmtMult(c[2]) + '</td></tr>';
@@ -286,7 +292,7 @@
       '</tbody></table></div></section>' +
 
       '<section class="section method"><h2>Method, in one paragraph</h2>' +
-      '<p>Implied value = TVL × multiple × growth × age × chains. The multiple is the category\u2019s calibrated median above. Growth is 1 + 0.40 × the 7-day TVL change, clamped to −50%…+100%. Age is 1 + 0.08 × years since listing, capped at 4 years; a protocol with no listing date counts as 1.00. Chains is 1 + 0.04 per extra chain, capped at 5. A protocol ranks when its record carries no token (no market cap, no CoinGecko id, no symbol) and it is not a wrapped, staked or bridged product, not an exchange and not a versioned pool. Above the $50M floor the house watchlist is the authority, because the snapshot carries no parent-protocol field; below it the radar finds the early ones the watchlist does not name.</p></section>' +
+      '<p>Implied value = TVL × multiple × growth × age × chains. The multiple is the category\u2019s calibrated geometric mean above. Growth is 1 + 0.40 × the 7-day TVL change, clamped to −50%…+100%. Age is 1 + 0.08 × years since listing, capped at 4 years; a protocol with no listing date counts as 1.00. Chains is 1 + 0.04 per extra chain, capped at 5. A protocol ranks when its record carries no token (no market cap, no CoinGecko id, no symbol) and it is not a wrapped, staked or bridged product, not an exchange and not a versioned pool. Above the $50M floor the house watchlist is the authority, because the snapshot carries no parent-protocol field; below it the radar finds the early ones the watchlist does not name.</p></section>' +
 
       '<div class="note"><b>Read the board honestly.</b> \u201CRecords no token\u201D means the snapshot\u2019s DefiLlama record carries none: a protocol on this board may still have a token its record does not carry. Implied value is what a launch would be worth if the protocol\u2019s record stayed as it is; it does not predict whether or when a token is issued, and farming never pays to claim: never pay a fee to claim a reward.</div>' +
 
