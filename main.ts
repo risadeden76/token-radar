@@ -100,5 +100,8 @@ if (sourceBytes > TEXT_MAX_BYTES) {
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
+    `token radar: model ${radar.model_version}: log(mcap) = ${radar.curve.intercept} + ${radar.curve.slope}·log(tvl), R² ${radar.curve.r2}, ${radar.curve.n} launched fitted\n` +
+    `token radar: validation LOO ×${radar.validation.loo.factor} (${(radar.validation.loo.within2 * 100).toFixed(1)}% within 2×, n=${radar.validation.loo.n}) · walk-forward ×${radar.validation.walk_forward.factor} (${(radar.validation.walk_forward.within2 * 100).toFixed(1)}% within 2×, train ${radar.validation.walk_forward.n_train} / test ${radar.validation.walk_forward.n_test}) · R2 gmean LOO ×${radar.validation.r2_loo.factor} (${(radar.validation.r2_loo.within2 * 100).toFixed(1)}%) · R2 walk-forward ×${radar.validation.r2_walk_forward.factor} (${(radar.validation.r2_walk_forward.within2 * 100).toFixed(1)}%)\n` +
+    `token radar: token odds plateau ${(radar.odds.plateau * 100).toFixed(1)}% (${radar.odds.plateau_n} protocols aged ${Math.round(radar.odds.buckets[radar.odds.buckets.length - 1]!.lo_days / 365)}y+), unknown-age odds ${(radar.odds.unknown_age_odds * 100).toFixed(1)}% · bootstrap slope 90% [${radar.bootstrap.slope_lo}, ${radar.bootstrap.slope_hi}], prediction band ×${radar.bootstrap.pred_band_factor}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'dashboard')} (${dashboardFiles.length + 1} files incl. data.js, ${sourceBytes} source bytes), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
