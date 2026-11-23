@@ -1,10 +1,15 @@
-// Token Radar: the value model and the board it writes. Model radar-4-loglog.
+// Token Radar: the value model and the board it writes. Model radar-5-loglog.
 //
 // One sealed snapshot in, one ranked board out. The board covers every slug in the snapshot's
-// watchlist (the floor, never the ceiling) and every pre-token protocol below the floor that passes
-// the same exclusion rule. Protocols above the floor that the house left out are left out here too:
-// above the floor the house's list is the authority, because the snapshot carries no
-// parent-protocol field and the house used one.
+// watchlist (the floor, never the ceiling) and every other pre-token protocol that passes the
+// same exclusion rule, above the floor or below it: 198 rows (40 watchlist + 20 above the floor
+// the watchlist leaves out + 138 below it). R3 ranked only the below-floor ones; the above-floor
+// twenty are admitted here because the snapshot carries no parent-protocol field and the house
+// rule as written admits them. Four of the twenty look affiliated with a token that already
+// trades or with an exchange — Circle Gateway, USDCx, Theo Network thUSD, Figure Markets
+// Exchange — and are flagged by name on the dashboard, ranked on their TVL like any other row,
+// never hidden and never hand-excluded: excluding by name would be a hardcoded list of names,
+// which is exactly what the value model must not be.
 //
 // Implied value is calibrated on the snapshot itself, never on a fixed multiple and never on a
 // name. The core is a log-log size curve fitted by OLS on the launched protocols:
@@ -13,30 +18,50 @@
 //
 // On this snapshot (128 launched protocols with mcap > 0 and TVL > 0) the fit is a = 6.96,
 // b = 0.52, R^2 = 0.19: market cap grows roughly with the square root of TVL, and the scatter
-// is wide (residual SD 2.09 in logs). A category gets a residual adjustment ONLY where it has
-// at least four launched peers: the mean log-residual of its peers, exponentiated and clamped
-// to [0.05, 3.0]. The adjustment is honest about its limits: out of sample it is roughly
-// neutral (LOO within-2x 31.3% with it, 32.0% without it — a one-protocol difference), and it
-// is kept because it is the fitted in-sample calibration, not because it wins held-out.
+// is wide (residual SD 2.09 in logs). The curve stands ALONE: R3 multiplied it by a
+// per-category residual adjustment where a category had at least four launched peers, but out
+// of sample the adjustments were neutral-to-negative — leave-one-out x3.50 with them against
+// x3.40 without, walk-forward x3.09 against x3.01, and repeated 10-fold cross-validation tied
+// on the factor with the bare curve better on mean error — so R4 drops them. The adjustment was
+// variance bought from as few as four peers, with no predictive gain; dropping it is the model
+// improvement, and it is a small one, stated as such.
+//
+// Richer models were tried honestly and failed out of sample, on the same 128 protocols with
+// every parameter refit inside each fold: fitted 7-day change, chain count and age (residual
+// correlations -0.14, +0.09 and -0.02 — all weak) made leave-one-out WORSE (x3.76-3.90 against
+// x3.40); a quadratic in log(TVL) has a coefficient of 0.009 with a standard error of 0.041
+// (t = 0.22) and wins exactly 64 of 128 leave-one-out points against the linear curve — a coin
+// flip, its walk-forward median gain a median artefact (mean error tied); robust (Huber) fits,
+// k-nearest neighbours, local-linear fits, category-specific slopes and median or shrunken
+// category adjustments all scored worse on leave-one-out. The scatter is irreducible with the
+// snapshot's ten fields: no model class tested beats a typical held-out error near x3.4, and
+// this file does not pretend otherwise.
 //
 // On top of the curve-implied value sit the R2 growth / age / chains factors, UNCHANGED and
-// NOT refit: the launched data give no defensible refit for them (correlations of the curve's
-// residuals with 7-day change, chain count and age are -0.14, +0.09 and -0.02 — all weak), so
-// they stay stated hand-set priors:
+// NOT refit: the launched data give no defensible refit for them, so they stay stated hand-set
+// priors:
 //
-//   implied = curve(tvl) x category-adj x growth x age x chains
+//   implied = curve(tvl) x growth x age x chains
 //   growth  = 1 + 0.40 x clamp(change_7d, -50%, +100%)        (unknown: 1.00)
 //   age     = 1 + 0.08 x min(age_years, 4)                    (unknown: 1.00)
 //   chains  = 1 + 0.04 x min(chains - 1, 5)
 //
 // Validation is computed by this file, on the same launched protocols, for this model AND for
 // the R2 geometric-mean model, so the comparison is honest. Leave-one-out refits the curve
-// (and the category adjustments, and the R2 multiples) on the other 127 protocols and predicts
-// the held-out one; walk-forward sorts the 95 launched protocols with a valid listed_at by
-// that date, fits on the earliest 47 and predicts the later 48. Both report the median
-// absolute log-error exponentiated as a factor (LOO x3.50 = a typical prediction within x3.50)
-// and the within-2x hit rate. The numbers are printed on the dashboard and in the integrity
-// strip, not just in this comment.
+// (and the R2 multiples) on the other 127 protocols and predicts the held-out one;
+// walk-forward sorts the 95 launched protocols with a valid listed_at by that date, fits on
+// the earliest 47 and predicts the later 48. Both report the median absolute log-error
+// exponentiated as a factor (LOO x3.40 = a typical prediction within x3.40) and the within-2x
+// hit rate. The numbers are printed on the dashboard and in the integrity strip, not just in
+// this comment. Measured: LOO x3.40 (32.0% within 2x), walk-forward x3.01 (35.4%), against
+// the R2 flat-multiple model's x4.78 (28.9%) and x5.04 (27.1%) on the same data.
+//
+// Coverage is accounted for whole: all 758 protocols in the snapshot appear in the coverage
+// table — 198 ranked (40 watchlist + 20 above the floor + 138 below it), 144 pre-token
+// protocols excluded by the rule (128 in an excluded category, 5 with a wrapped or staking
+// word in the name, 11 versioned pools), and 416 token-bearing protocols (128 fitted the
+// curve, 16 with a market cap at or below zero left out of the fit, 272 with no market cap
+// recorded).
 //
 // Token odds come from the no-token clock. "Has a token" means the record carries ANY of a
 // market cap, a CoinGecko id or a symbol — the same definition as this board's "records no
@@ -95,9 +120,6 @@ export interface ModelConstants {
   age_cap_years: number;
   chain_rate: number;
   chain_cap: number;
-  adj_floor: number;
-  adj_cap: number;
-  min_peers: number;
   odds_floor: number;
   airdrop_pool_pct: number;
   farmers_assumed: number;
@@ -120,9 +142,6 @@ export const MODEL: ModelConstants = {
   age_cap_years: 4,
   chain_rate: 0.04,
   chain_cap: 5,
-  adj_floor: 0.05,
-  adj_cap: 3.0,
-  min_peers: 4,
   odds_floor: 0.02,
   airdrop_pool_pct: 5,
   farmers_assumed: 50000,
@@ -138,7 +157,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4-loglog';
+export const MODEL_VERSION = 'radar-5-loglog';
 
 /** How many live-token protocols the dashboard's calibration view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -209,8 +228,6 @@ export interface Integrity {
   loo_factor: number;
   loo_within2: number;
   loo_n: number;
-  loo_no_cat_factor: number;
-  loo_no_cat_within2: number;
   wf_factor: number;
   wf_within2: number;
   wf_train: number;
@@ -223,6 +240,9 @@ export interface Integrity {
   board_rows: number;
   watchlist_covered: number;
   watchlist_size: number;
+  coverage_total: number;
+  coverage_excluded_pre_token: number;
+  coverage_token_bearing: number;
   slope_median: number;
   slope_lo: number;
   slope_hi: number;
@@ -255,20 +275,20 @@ export interface BoardRow {
   farm_verdict: 'farm' | 'thin' | 'skip';
   model: {
     curve_value_usd: number;
-    category_adjustment: number;
-    category_peers: number;
     growth_multiplier: number;
     age_multiplier: number;
     chain_multiplier: number;
-    base_value_usd: number;
   };
   farm_steps: string[];
 }
 
-/** One row of the dashboard's compact board: [rank, slug, name, catIdx, chainIdxs, tvl, change_7d,
- *  age_days, implied, categoryAdj, growthMult, ageMult, chainMult, groupIdx, variant,
- *  token_odds, net_per_hour, expected_value, verdict, base_value]. */
-export type RadarRow = [number, string, string, number, number[], number, number | null, number | null, number, number, number, number, number, number, number, number, number, number, 'farm' | 'thin' | 'skip', number];
+/** One row of the dashboard's compact board: [slug, name, catIdx, chainIdxs, tvl, change_7d,
+ *  age_days, implied, growthMult, ageMult, chainMult, groupIdx, variant,
+ *  token_odds, net_per_hour, expected_value, verdict]. Rank is the row's position + 1 — the
+ *  rows are written in rank order and the dashboard restores the rank at load — so no row
+ *  carries it. The curve value is implied / (growth x age x chains), so the row carries no
+ *  separate curve or adjustment field. */
+export type RadarRow = [string, string, number, number[], number, number | null, number | null, number, number, number, number, number, number, number, number, number, 'farm' | 'thin' | 'skip'];
 
 /** One launched peer, compact: [slug, name, catIdx, chainIdxs, tvl, mcap, change_7d]. */
 export type LiveRow = [string, string, number, number[], number, number | null, number | null];
@@ -280,11 +300,9 @@ export interface RadarData {
   floor_usd: number;
   model: ModelConstants;
   model_version: string;
-  calibration_peers: number;
   curve: CurveFit;
   validation: {
     loo: ValidationScore;
-    loo_no_cat: ValidationScore;
     walk_forward: WalkForwardScore;
     r2_loo: ValidationScore;
     r2_walk_forward: WalkForwardScore;
@@ -301,15 +319,14 @@ export interface RadarData {
   odds: OddsModel;
   farm: FarmEconomics;
   integrity: Integrity;
-  watchlist_size: number;
   watchlist: string[];
-  board_size: number;
   early_size: number;
-  live_size: number;
+  above_floor_size: number;
+  flagged: string[];
   categories: string[];
   chains: string[];
   groups: string[];
-  calibration: [string, number, number][];
+  coverage: [string, number][];
   steps: string[];
   actions: Record<string, { action: string; weekly: string }>;
   rows: RadarRow[];
@@ -423,41 +440,10 @@ export function curvePredict(fit: CurveFit, tvl: number): number {
   return Math.exp(fit.intercept + fit.slope * Math.log(tvl));
 }
 
-/** Per-category residual adjustments: the mean log-residual of a category's launched peers,
- *  exponentiated and clamped, ONLY where the category has at least `min_peers` of them. */
-export function categoryAdjustments(
-  fit: CurveFit,
-  launched: SnapshotProtocol[],
-  model: ModelConstants = MODEL,
-): Map<string, { peers: number; adj: number }> {
-  const byCat = new Map<string, number[]>();
-  for (const p of launched) {
-    const resid = Math.log(p.mcap_usd!) - (fit.intercept + fit.slope * Math.log(p.tvl_usd));
-    const key = p.category ?? 'Other';
-    const list = byCat.get(key);
-    if (list === undefined) byCat.set(key, [resid]);
-    else list.push(resid);
-  }
-  const out = new Map<string, { peers: number; adj: number }>();
-  for (const [cat, resids] of byCat) {
-    if (resids.length >= model.min_peers) {
-      const mean = resids.reduce((a, b) => a + b, 0) / resids.length;
-      const adj = Math.min(model.adj_cap, Math.max(model.adj_floor, Math.exp(mean)));
-      out.set(cat, { peers: resids.length, adj });
-    }
-  }
-  return out;
-}
-
-/** The category adjustment one category gets: its fitted multiplier, else 1 (no adjustment). */
-export function adjustmentFor(
-  category: string | null,
-  adjustments: Map<string, { peers: number; adj: number }>,
-): { adj: number; peers: number } {
-  const hit = category === null ? undefined : adjustments.get(category);
-  if (hit !== undefined) return { adj: hit.adj, peers: hit.peers };
-  return { adj: 1, peers: 0 };
-}
+/** The R2 geometric-mean model's category threshold: a category gets its own multiple only
+ *  where it has at least this many launched peers. It belongs to the R2 comparison, not to
+ *  this radar's model, which fits the global curve alone. */
+const R2_MIN_PEERS = 4;
 
 /** A validation score from absolute log-errors: the median exponentiated as a factor, and the
  *  share within log(2). */
@@ -466,22 +452,17 @@ function scoreErrors(errors: number[]): ValidationScore {
   return { factor: round2(Math.exp(med)), within2: round4(errors.filter((e) => e <= Math.log(2)).length / errors.length), n: errors.length };
 }
 
-/** Leave-one-out for the log-log curve: refit the curve AND the category adjustments on the
- *  other launched protocols, predict the held-out one's market cap from its TVL alone (the
- *  growth / age / chains factors are ranking adjustments, not part of the fitted curve, and
- *  are not in the validation). Set `useCat` false to score the bare global curve. */
-export function looLogLog(launched: SnapshotProtocol[], useCat: boolean, model: ModelConstants = MODEL): ValidationScore {
+/** Leave-one-out for the log-log curve: refit the curve on the other launched protocols and
+ *  predict the held-out one's market cap from its TVL alone (the growth / age / chains
+ *  factors are ranking adjustments, not part of the fitted curve, and are not in the
+ *  validation). */
+export function looLogLog(launched: SnapshotProtocol[], model: ModelConstants = MODEL): ValidationScore {
   const errors: number[] = [];
   for (let i = 0; i < launched.length; i++) {
     const rest = launched.filter((_, j) => j !== i);
     const fit = fitCurve(rest);
     const held = launched[i]!;
-    let pred = Math.log(curvePredict(fit, held.tvl_usd));
-    if (useCat) {
-      const adjs = categoryAdjustments(fit, rest, model);
-      pred += Math.log(adjustmentFor(held.category, adjs).adj);
-    }
-    errors.push(Math.abs(Math.log(held.mcap_usd!) - pred));
+    errors.push(Math.abs(Math.log(held.mcap_usd!) - Math.log(curvePredict(fit, held.tvl_usd))));
   }
   return scoreErrors(errors);
 }
@@ -497,7 +478,7 @@ export function looGmean(launched: SnapshotProtocol[], model: ModelConstants = M
     const held = launched[i]!;
     const cat = held.category ?? 'Other';
     const ratios = rest.filter((p) => (p.category ?? 'Other') === cat).map((p) => p.mcap_usd! / p.tvl_usd);
-    const mult = ratios.length >= model.min_peers ? geometricMean(ratios) : global;
+    const mult = ratios.length >= R2_MIN_PEERS ? geometricMean(ratios) : global;
     errors.push(Math.abs(Math.log(held.mcap_usd!) - Math.log(held.tvl_usd * mult)));
   }
   return scoreErrors(errors);
@@ -518,11 +499,7 @@ export function walkForwardLogLog(launched: SnapshotProtocol[], model: ModelCons
   const train = dated.slice(0, half);
   const test = dated.slice(half);
   const fit = fitCurve(train);
-  const adjs = categoryAdjustments(fit, train, model);
-  const errors = test.map((p) => {
-    const pred = Math.log(curvePredict(fit, p.tvl_usd)) + Math.log(adjustmentFor(p.category, adjs).adj);
-    return Math.abs(Math.log(p.mcap_usd!) - pred);
-  });
+  const errors = test.map((p) => Math.abs(Math.log(p.mcap_usd!) - Math.log(curvePredict(fit, p.tvl_usd))));
   const s = scoreErrors(errors);
   return { factor: s.factor, within2: s.within2, n_train: train.length, n_test: test.length, n_dated: dated.length };
 }
@@ -537,7 +514,7 @@ export function walkForwardGmean(launched: SnapshotProtocol[], model: ModelConst
   const errors = test.map((p) => {
     const cat = p.category ?? 'Other';
     const ratios = train.filter((q) => (q.category ?? 'Other') === cat).map((q) => q.mcap_usd! / q.tvl_usd);
-    const mult = ratios.length >= model.min_peers ? geometricMean(ratios) : global;
+    const mult = ratios.length >= R2_MIN_PEERS ? geometricMean(ratios) : global;
     return Math.abs(Math.log(p.mcap_usd!) - Math.log(p.tvl_usd * mult));
   });
   const s = scoreErrors(errors);
@@ -611,18 +588,16 @@ export function bootstrapCurve(
   };
 }
 
-/** The four factors and the implied value one protocol gets under the model. The curve value is
- *  the size curve alone; the base is the curve times the category adjustment; the implied value
- *  is the base times the growth, age and chains factors. */
+/** The factors and the implied value one protocol gets under the model. The curve value is
+ *  the size curve alone; the implied value is the curve times the growth, age and chains
+ *  factors. No category adjustment: the global curve stands alone. */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   fit: CurveFit,
-  adjustments: Map<string, { peers: number; adj: number }>,
   model: ModelConstants = MODEL,
-): { implied: number; curve: number; adj: number; peers: number; growthMult: number; ageMult: number; chainMult: number; base: number; age: number | null } {
+): { implied: number; curve: number; growthMult: number; ageMult: number; chainMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
-  const { adj, peers } = adjustmentFor(protocol.category, adjustments);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap_pct, Math.max(model.growth_floor_pct, rawGrowth));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
@@ -630,9 +605,8 @@ export function impliedValue(
   const ageMult = age === null ? 1 : 1 + model.age_rate * Math.min(ageYears, model.age_cap_years);
   const chainMult = 1 + model.chain_rate * Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_cap);
   const curve = curvePredict(fit, protocol.tvl_usd);
-  const base = curve * adj;
-  const implied = Math.max(1, base * growthMult * ageMult * chainMult);
-  return { implied, curve, adj, peers, growthMult, ageMult, chainMult, base, age };
+  const implied = Math.max(1, curve * growthMult * ageMult * chainMult);
+  return { implied, curve, growthMult, ageMult, chainMult, age };
 }
 
 /** Pool adjacent violators: merge neighbouring age buckets while an earlier bucket's token
@@ -947,6 +921,25 @@ export function liveRows(snapshot: Snapshot): SnapshotProtocol[] {
     .slice(0, LIVE_ROWS);
 }
 
+/** Above-floor rows the coded rule admits but a reader should treat with care: each name
+ *  suggests a product of a token that already trades, or an exchange, but the snapshot
+ *  carries no parent-protocol field to prove it, so the rule as written admits them. The
+ *  flag changes no value, rank or verdict; it is a disclosure, on the dashboard, that these
+ *  four are ranked on their TVL like any other row. */
+export const FLAGGED_ABOVE_FLOOR = ['circle-gateway', 'usdcx', 'theo-network-thusd', 'figure-markets-exchange'];
+
+/** Why a pre-token protocol is excluded from the board, in the order isRankable checks the
+ *  rule, or null when it passes. The coverage table accounts for every excluded protocol
+ *  under one of these reasons. */
+export function exclusionReason(p: SnapshotProtocol): 'excluded category' | 'wrapped or staking in the name' | 'exchange name' | 'versioned pool' | null {
+  if (!isPreToken(p)) return null;
+  if (p.category !== null && EXCLUDED_CATEGORIES.has(p.category)) return 'excluded category';
+  if (WRAPPED.test(p.name)) return 'wrapped or staking in the name';
+  if (EXCHANGES.some((e) => p.name.startsWith(e))) return 'exchange name';
+  if (VERSIONED.test(p.name)) return 'versioned pool';
+  return null;
+}
+
 /** The protocols the board ranks, strongest first, with ranks 1..n. Implied values are rounded
  *  to whole dollars and then nudged down by $1 wherever two rows would share a value, so the
  *  board is strictly decreasing by rank — a ranking, not a tie. */
@@ -956,13 +949,11 @@ export function buildBoard(
 ): {
   board: BoardRow[];
   fit: CurveFit;
-  adjustments: Map<string, { peers: number; adj: number }>;
   odds: OddsModel;
   launched: SnapshotProtocol[];
 } {
   const launched = launchedProtocols(snapshot);
   const fit = fitCurve(launched);
-  const adjustments = categoryAdjustments(fit, launched, model);
   const odds = fitOdds(snapshot, model);
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
@@ -971,13 +962,14 @@ export function buildBoard(
     const p = index.get(slug);
     if (p !== undefined) chosen.set(slug, p);
   }
-  // The early radar: pre-token protocols below the watchlist floor that pass the same exclusion
-  // rule. Never a replacement for a watchlist row: a chosen protocol stays chosen.
+  // The radar: every rankable pre-token protocol, above the floor or below it — the watchlist
+  // is the floor, never the ceiling. Never a replacement for a watchlist row: a chosen
+  // protocol stays chosen.
   for (const p of snapshot.protocols) {
-    if (!chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd) chosen.set(p.slug, p);
+    if (!chosen.has(p.slug) && isRankable(p)) chosen.set(p.slug, p);
   }
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, fit, adjustments, model);
+    const v = impliedValue(p, snapshot.as_of, fit, model);
     const tokenOdds = oddsForAge(odds, v.age);
     return { p, ...v, tokenOdds };
   });
@@ -1009,23 +1001,19 @@ export function buildBoard(
       farm_verdict: costing.verdict,
       model: {
         curve_value_usd: Math.round(s.curve),
-        category_adjustment: round4(s.adj),
-        category_peers: s.peers,
         growth_multiplier: round4(s.growthMult),
         age_multiplier: round4(s.ageMult),
         chain_multiplier: round4(s.chainMult),
-        base_value_usd: Math.round(s.base),
       },
       farm_steps: farmSteps(s.p, s.age, implied, s.tokenOdds, costing),
     };
   });
-  return { board, fit, adjustments, odds, launched };
+  return { board, fit, odds, launched };
 }
 
-/** A board row's compact form for data.js. */
+/** A board row's compact form for data.js. Rank is the row's position + 1 and is not stored. */
 export function radarRow(row: BoardRow, categories: string[], chains: string[], groups: string[]): RadarRow {
   return [
-    row.rank,
     row.slug,
     row.name,
     categories.indexOf(row.category ?? 'Other'),
@@ -1034,7 +1022,6 @@ export function radarRow(row: BoardRow, categories: string[], chains: string[], 
     row.change_7d,
     row.age_days,
     row.implied_value_usd,
-    row.model.category_adjustment,
     row.model.growth_multiplier,
     row.model.age_multiplier,
     row.model.chain_multiplier,
@@ -1044,7 +1031,6 @@ export function radarRow(row: BoardRow, categories: string[], chains: string[], 
     row.net_per_hour_usd,
     row.expected_value_usd,
     row.farm_verdict,
-    row.model.base_value_usd,
   ];
 }
 
@@ -1063,23 +1049,53 @@ export function liveRow(p: SnapshotProtocol, categories: string[], chains: strin
 
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
-  const { board, fit, adjustments, odds, launched } = buildBoard(snapshot, model);
+  const { board, fit, odds, launched } = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
-  const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
+  const watchlistSet = new Set(snapshot.watchlist);
+  const aboveFloor = board.filter((r) => !watchlistSet.has(r.slug) && r.tvl_usd >= snapshot.floor_usd).length;
+  const early = board.filter((r) => !watchlistSet.has(r.slug) && r.tvl_usd < snapshot.floor_usd).length;
   const categories = [...new Set([...board.map((r) => r.category ?? 'Other'), ...live.map((p) => p.category ?? 'Other')])].sort();
   const chains = [...new Set([...board.flatMap((r) => r.chains), ...live.flatMap((p) => p.chains)])].sort();
   const groups = Object.keys(FARM_ACTIONS).sort();
-  const calibrationRows: [string, number, number][] = [...adjustments.entries()]
-    .map(([cat, v]): [string, number, number] => [cat, v.peers, round4(v.adj)])
-    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  const loo = looLogLog(launched, true, model);
-  const looNoCat = looLogLog(launched, false, model);
+  // Coverage: every protocol in the snapshot, accounted for under exactly one heading.
+  const excludedReasons = new Map<string, number>();
+  let excludedPreToken = 0;
+  let tokenBearing = 0;
+  let noMcap = 0;
+  for (const p of snapshot.protocols) {
+    if (isPreToken(p)) {
+      const reason = exclusionReason(p);
+      if (reason !== null) {
+        excludedPreToken++;
+        excludedReasons.set(reason, (excludedReasons.get(reason) ?? 0) + 1);
+      }
+    } else {
+      tokenBearing++;
+      if (p.mcap_usd === null) noMcap++;
+    }
+  }
+  const excludedNonpositive = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd <= 0).length;
+  const watchlistCovered = snapshot.watchlist.filter((s) => board.some((r) => r.slug === s)).length;
+  const coverage: [string, number][] = [
+    ['Ranked on the board', board.length],
+    ['— on the watchlist', watchlistCovered],
+    ['— above floor, not watchlisted', aboveFloor],
+    ['— below floor (early)', early],
+    ['Pre-token, excluded', excludedPreToken],
+    ...[...excludedReasons.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, n]): [string, number] => [`— ${reason}`, n]),
+    ['Token-bearing (never ranked)', tokenBearing],
+    ['— fitted the size curve', fit.n],
+    ['— mcap ≤ 0, left out of the fit', excludedNonpositive],
+    ['— no mcap recorded', noMcap],
+    ['Total accounted for', snapshot.protocols.length],
+  ];
+  const loo = looLogLog(launched, model);
   const wf = walkForwardLogLog(launched, model);
   const r2loo = looGmean(launched, model);
   const r2wf = walkForwardGmean(launched, model);
   const boot = bootstrapCurve(launched, model);
-  const watchlistCovered = snapshot.watchlist.filter((s) => board.some((r) => r.slug === s)).length;
-  const excluded = snapshot.protocols.filter((p) => p.mcap_usd !== null && (p.mcap_usd <= 0 || p.tvl_usd <= 0)).length;
   const farm: FarmEconomics = {
     allocation_share: allocationShare(model),
     airdrop_pool_pct: model.airdrop_pool_pct,
@@ -1093,20 +1109,19 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     thin_threshold_usd_per_hour: model.thin_threshold_usd_per_hour,
   };
   const suggestedTitle =
-    `Launch Radar v4 — log-log size curve on ${fit.n} traded tokens, ` +
+    `Launch Radar v5 — log-log size curve on ${fit.n} traded tokens, ` +
     `LOO ×${loo.factor.toFixed(2)} (${Math.round(loo.within2 * 100)}% within 2×), ` +
     `walk-forward ×${wf.factor.toFixed(2)} (${Math.round(wf.within2 * 100)}% within 2×), ` +
     `token odds from the no-token clock, farm verdicts costed in $/hour, ` +
-    `${board.length} rows, ${watchlistCovered}/${snapshot.watchlist.length} watchlist`;
+    `${board.length} rows, ${watchlistCovered}/${snapshot.watchlist.length} watchlist, ` +
+    `${snapshot.protocols.length} protocols accounted for`;
   const integrity: Integrity = {
     model_version: MODEL_VERSION,
     launched_fitted: fit.n,
-    launched_excluded_nonpositive_mcap: excluded,
+    launched_excluded_nonpositive_mcap: excludedNonpositive,
     loo_factor: loo.factor,
     loo_within2: loo.within2,
     loo_n: loo.n,
-    loo_no_cat_factor: looNoCat.factor,
-    loo_no_cat_within2: looNoCat.within2,
     wf_factor: wf.factor,
     wf_within2: wf.within2,
     wf_train: wf.n_train,
@@ -1119,6 +1134,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     board_rows: board.length,
     watchlist_covered: watchlistCovered,
     watchlist_size: snapshot.watchlist.length,
+    coverage_total: snapshot.protocols.length,
+    coverage_excluded_pre_token: excludedPreToken,
+    coverage_token_bearing: tokenBearing,
     slope_median: boot.slope_median,
     slope_lo: boot.slope_lo,
     slope_hi: boot.slope_hi,
@@ -1137,9 +1155,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     floor_usd: snapshot.floor_usd,
     model,
     model_version: MODEL_VERSION,
-    calibration_peers: fit.n,
     curve: { n: fit.n, intercept: round4(fit.intercept), slope: round4(fit.slope), r2: round4(fit.r2), resid_sd: round4(fit.resid_sd) },
-    validation: { loo, loo_no_cat: looNoCat, walk_forward: wf, r2_loo: r2loo, r2_walk_forward: r2wf },
+    validation: { loo, walk_forward: wf, r2_loo: r2loo, r2_walk_forward: r2wf },
     bootstrap: {
       slope_lo: boot.slope_lo,
       slope_median: boot.slope_median,
@@ -1152,15 +1169,14 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     odds,
     farm,
     integrity,
-    watchlist_size: snapshot.watchlist.length,
     watchlist: snapshot.watchlist,
-    board_size: board.length,
     early_size: early,
-    live_size: live.length,
+    above_floor_size: aboveFloor,
+    flagged: FLAGGED_ABOVE_FLOOR.filter((s) => board.some((r) => r.slug === s)),
     categories,
     chains,
     groups,
-    calibration: calibrationRows,
+    coverage,
     steps: FARM_STEPS,
     actions: FARM_ACTIONS,
     rows: board.map((r) => radarRow(r, categories, chains, groups)),
@@ -1256,8 +1272,8 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
  *   one object share a code, and the same long key always takes the same code);
  * - the farm verdict, a 'farm' | 'thin' | 'skip' string on every row, becomes 0 | 1 | 2;
  * - a row's slug becomes null when it is exactly the slug of its name (lowercase, runs of
- *   non-alphanumerics to one '-', no leading or trailing '-'), which holds for 201 of the
- *   202 rows — the one exception keeps its slug in full — and the dashboard re-derives it;
+ *   non-alphanumerics to one '-', no leading or trailing '-'), which holds for 221 of the
+ *   222 rows — the one exception keeps its slug in full — and the dashboard re-derives it;
  * - the watchlist becomes the ranks of its protocols (all 40 are on the board), not slugs;
  * - the object is written one top-level entry per line, so even a cut would still show
  *   the validation block, which sits before the rows, instead of dropping the file whole.
@@ -1265,17 +1281,17 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
  * board.json is untouched: it keeps the long keys, the string verdicts and every slug.
  */
 const DATA_KEYS: Record<string, string> = {
-  as_of: 'ao', source: 'sr', floor_usd: 'fu', model: 'mo', model_version: 'mv', calibration_peers: 'cp',
-  curve: 'cu', validation: 'va', bootstrap: 'bo', odds: 'od', farm: 'fa', integrity: 'ig', watchlist_size: 'wz',
-  watchlist: 'wl', board_size: 'bz', early_size: 'ez', live_size: 'lz', categories: 'ct', chains: 'ch',
-  groups: 'gp', calibration: 'ca', steps: 'sp', actions: 'ax', rows: 'rw', live: 'lv',
+  as_of: 'ao', source: 'sr', floor_usd: 'fu', model: 'mo', model_version: 'mv',
+  curve: 'cu', validation: 'va', bootstrap: 'bo', odds: 'od', farm: 'fa', integrity: 'ig',
+  watchlist: 'wl', watchlist_size: 'wz', early_size: 'ez', above_floor_size: 'ab', flagged: 'fg',
+  categories: 'ct', chains: 'ch', groups: 'gp', coverage: 'cv', steps: 'sp', actions: 'ax', rows: 'rw', live: 'lv',
   growth_weight: 'gw', growth_floor_pct: 'gf', growth_cap_pct: 'gc', age_rate: 'ar', age_cap_years: 'ay',
-  chain_rate: 'cr', chain_cap: 'cc', adj_floor: 'af', adj_cap: 'ap', min_peers: 'mp', odds_floor: 'of',
+  chain_rate: 'cr', chain_cap: 'cc', odds_floor: 'of',
   airdrop_pool_pct: 'pp', farm_threshold_usd_per_hour: 'ft', farmers_assumed: 'fn', setup_gas_usd: 'sg',
   setup_hours: 'sh', thin_threshold_usd_per_hour: 'tt', time_value_usd_per_hour: 'tv', weekly_gas_usd: 'wg',
   weekly_hours: 'wh', bootstrap_refits: 'br', bootstrap_seed: 'bs',
   n: 'n', intercept: 'i', slope: 'k', r2: 'r', resid_sd: 'd',
-  loo: 'lo', loo_no_cat: 'lc', walk_forward: 'wf', r2_loo: 'rl', r2_walk_forward: 'rf',
+  loo: 'lo', walk_forward: 'wf', r2_loo: 'rl', r2_walk_forward: 'rf',
   factor: 'fc', within2: 'w2', n_train: 'nt', n_test: 'ne', n_dated: 'nd',
   slope_lo: 'sl', slope_median: 'sm', slope_hi: 'si', intercept_lo: 'il', intercept_hi: 'ih',
   pred_band_factor: 'pb', pred_band_tvl: 'pt',
@@ -1284,10 +1300,11 @@ const DATA_KEYS: Record<string, string> = {
   allocation_share: 'al',
   board_rows: 'ibr', curve_intercept: 'ici', curve_r2: 'ir2', curve_slope: 'ics',
   launched_excluded_nonpositive_mcap: 'lex', launched_fitted: 'lft', loo_factor: 'lof', loo_n: 'lon',
-  loo_no_cat_factor: 'lnf', loo_no_cat_within2: 'lnw', loo_within2: 'low',
+  loo_within2: 'low',
   r2_loo_factor: 'rlf', r2_loo_within2: 'rlw', r2_wf_factor: 'rwf', r2_wf_within2: 'rww',
   suggested_title: 'stt', watchlist_covered: 'wcv', wf_dated: 'wfd', wf_factor: 'wff', wf_test: 'wft',
   wf_train: 'wfr', wf_within2: 'wfw',
+  coverage_total: 'ctt', coverage_excluded_pre_token: 'cep', coverage_token_bearing: 'ctb',
   action: 'ac', weekly: 'wk',
   curator: 'cq', dex: 'dx', insurance: 'in', lending: 'le', other: 'ot', perps: 'pe', prediction: 'pr',
   rwa: 'ra', stable: 'sb', staking: 'sk', yield: 'yi',
@@ -1310,11 +1327,11 @@ function packValue(value: unknown): unknown {
 
 export function dataScript(radar: RadarData): string {
   const packed = packValue(radar) as Record<string, unknown>;
-  // Rows are [rank, slug, name, ...]: null the slug when it is the slug of the name.
+  // Rows are [slug, name, ...] in rank order: null the slug when it is the slug of the name.
   packed.rw = (radar.rows as RadarRow[]).map((r) => {
     const row = [...r] as unknown[];
-    if (r[1] === slugOfName(r[2])) row[1] = null;
-    row[18] = VERDICT_CODE[r[18] as string]!;
+    if (r[0] === slugOfName(r[1])) row[0] = null;
+    row[16] = VERDICT_CODE[r[16] as string]!;
     return row;
   });
   // Live rows are [slug, name, ...]: same rule for their slug.
@@ -1323,8 +1340,8 @@ export function dataScript(radar: RadarData): string {
     if (r[0] === slugOfName(r[1])) row[0] = null;
     return row;
   });
-  // Watchlist as ranks: every watchlisted protocol is on the board.
-  const bySlug = new Map(radar.rows.map((r) => [r[1], r[0]]));
+  // Watchlist as ranks: every watchlisted protocol is on the board, at position + 1.
+  const bySlug = new Map(radar.rows.map((r, i) => [r[0], i + 1]));
   packed.wl = radar.watchlist.map((s) => bySlug.get(s)!);
   // Groups are the actions keys, so they take the same short codes.
   packed.gp = radar.groups.map((g) => DATA_KEYS[g] ?? g);

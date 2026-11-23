@@ -1,13 +1,9 @@
-// Token Radar's dashboard: a sortable, filterable board of pre-token protocols, a detail view
-// for each one, and the calibration the value model is built on. The data comes from data.js
-// (window.RADAR), written by main.ts from the same board as board.json. Rows are compact
-// arrays: [rank, slug|null, name, catIdx, chainIdxs, tvl, change7d, ageDays, implied,
-// categoryAdj, growthMult, ageMult, chainMult, groupIdx, variant, tokenOdds, netPerHour,
-// expectedValue, verdict 0|1|2, baseValue]. A null slug is the slug of the name (lowercase,
-// non-alphanumerics to one '-', no edge '-'); only vfat.io keeps its slug in full. Farm plans
-// render here from the same templates main.ts uses (RADAR.sp and RADAR.ax), so the plan a
-// reader sees is the plan the board carries, string for string. State lives in the URL hash,
-// so a board, a detail view and a filtered view each have an address.
+// Token Radar's dashboard: sortable, filterable board, detail view, calibration.
+// Data: data.js (window.RADAR). Rows arrive in rank order as [slug|null, name, catIdx,
+// chainIdxs, tvl, change7d, ageDays, implied, growthMult, ageMult, chainMult, groupIdx,
+// variant, tokenOdds, netPerHour, expectedValue, verdict 0|1|2]; rank is position + 1,
+// restored at load. Curve = implied / (growth x age x chains). Null slug = slug of
+// the name; only vfat.io keeps its slug.
 (function () {
   'use strict';
   var D = window.RADAR;
@@ -15,6 +11,9 @@
     document.getElementById('radar').innerHTML = '<div class="wrap"><p class="empty">No radar data: data.js did not load.</p></div>';
     return;
   }
+
+  // Rows arrive rank-ordered with no rank field; restore it (position + 1).
+  D.rw.forEach(function (r, i) { r.unshift(i + 1); });
 
   var WATCHLIST = {};
   D.wl.forEach(function (n) { WATCHLIST[n] = true; });
@@ -38,6 +37,12 @@
     if (days === null || days === undefined) return '—';
     if (days < 365) return days + 'd';
     return (days / 365).toFixed(1) + 'y';
+  }
+  // The farm plan's long form, matching lib/model.ts string for string ('45 days', not '45d').
+  function fmtAgeLong(days) {
+    if (days === null || days === undefined) return 'an unreported time';
+    if (days < 365) return days + ' days';
+    return (days / 365).toFixed(1) + ' years';
   }
   function fmtMult(n) { return '×' + n.toFixed(2); }
   function fmtInt(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
@@ -69,7 +74,7 @@
     return out;
   }
   function farmSteps(row) {
-    var group = D.gp[row[13]];
+    var group = D.gp[row[12]];
     var action = D.ax[group] || D.ax.ot;
     var chain = row[4].length > 0 ? D.ch[row[4][0]] : 'its main chain';
     var capital = '$' + capitalFor(row[5]);
@@ -83,18 +88,18 @@
       gas: gasFor(chain),
       tvl: fmtUsd(row[5]),
       growth: row[6] === null ? 'an unreported amount' : fmtPct(row[6]),
-      age: row[7] === null ? 'an unreported time' : fmtAge(row[7]),
+      age: fmtAgeLong(row[7]),
       implied: fmtUsd(row[8]),
-      odds: Math.round(row[15] * 100) + '%',
-      ev: fmtUsd(row[17]),
-      hourly: '$' + row[16].toFixed(2),
-      verdict: ['farm', 'thin', 'skip'][row[18]],
+      odds: Math.round(row[14] * 100) + '%',
+      ev: fmtUsd(row[16]),
+      hourly: '$' + row[15].toFixed(2),
+      verdict: ['farm', 'thin', 'skip'][row[17]],
     };
     return [
       fill(D.sp[7], values),
       fill(D.sp[0], values),
       fill(D.sp[1], values),
-      fill(D.sp[2 + row[14]], values),
+      fill(D.sp[2 + row[13]], values),
       fill(D.sp[4], values),
       fill(D.sp[5], values),
       fill(D.sp[6], values),
@@ -152,8 +157,8 @@
       tvl: function (r) { return r[5]; },
       change: function (r) { return r[6] === null ? -Infinity : r[6]; },
       age: function (r) { return r[7] === null ? -1 : r[7]; },
-      odds: function (r) { return r[15]; },
-      hourly: function (r) { return r[16]; },
+      odds: function (r) { return r[14]; },
+      hourly: function (r) { return r[15]; },
       name: function (r) { return r[2].toLowerCase(); },
     }[key] || function (r) { return r[0]; };
     list.sort(function (a, b) {
@@ -182,7 +187,7 @@
   function rowHtml(r) {
     var chg = r[6];
     var chgCls = chg === null ? 'muted' : chg >= 0 ? 'pos' : 'neg';
-    var hrCls = r[16] > 0 ? 'pos' : r[16] < 0 ? 'neg' : 'muted';
+    var hrCls = r[15] > 0 ? 'pos' : r[15] < 0 ? 'neg' : 'muted';
     return '<tr data-slug="' + esc(rowSlug(r)) + '" data-selected="' + (state.detail === rowSlug(r)) + '">' +
       '<td class="num">' + r[0] + '</td>' +
       '<td class="name"><b>' + esc(r[2]) + '</b><span>' + esc(rowSlug(r)) + '</span>' + (WATCHLIST[r[0]] ? '<span class="tag wl">Watchlist</span>' : '') + '</td>' +
@@ -191,19 +196,15 @@
       '<td class="num">' + fmtUsd(r[5]) + '</td>' +
       '<td class="num ' + chgCls + '">' + fmtPct(chg) + '</td>' +
       '<td class="num">' + fmtAge(r[7]) + '</td>' +
-      '<td class="num">' + Math.round(r[15] * 100) + '%</td>' +
-      '<td class="num ' + hrCls + '">' + fmtHourly(r[16]) + '</td>' +
+      '<td class="num">' + Math.round(r[14] * 100) + '%</td>' +
+      '<td class="num ' + hrCls + '">' + fmtHourly(r[15]) + '</td>' +
       '<td class="num"><b>' + fmtUsd(r[8]) + '</b></td>' +
       '</tr>';
   }
   function detailHtml(r) {
     var steps = farmSteps(r);
-    var inCalibration = D.ca.some(function (c) { return c[0] === D.ct[r[3]]; });
-    var adjText = inCalibration
-      ? 'The category adjustment is the exponentiated mean log-residual of the ' + esc(D.ct[r[3]]) + ' launched peers on the fitted size curve'
-      : 'The category adjustment is 1.00: ' + esc(D.ct[r[3]]) + ' has too few launched peers to fit its own, so the global curve stands alone';
-    var curveVal = r[19] / r[9];
-    var hrCls = r[16] > 0 ? 'pos' : r[16] < 0 ? 'neg' : 'muted';
+    var hrCls = r[15] > 0 ? 'pos' : r[15] < 0 ? 'neg' : 'muted';
+    var curveVal = r[8] / (r[9] * r[10] * r[11]);
     return '<section class="panel detail" id="detail">' +
       '<div class="head"><h2>' + esc(r[2]) + '</h2><span class="slug">' + esc(rowSlug(r)) + '</span>' +
       (WATCHLIST[r[0]] ? '<span class="tag wl">Watchlist</span>' : '') +
@@ -213,18 +214,18 @@
       '<div class="kv"><span>TVL</span><b>' + fmtUsd(r[5]) + '</b></div>' +
       '<div class="kv"><span>7-day change</span><b>' + fmtPct(r[6]) + '</b></div>' +
       '<div class="kv"><span>Age</span><b>' + fmtAge(r[7]) + '</b></div>' +
-      '<div class="kv"><span>Token odds</span><b>' + Math.round(r[15] * 100) + '%</b></div>' +
-      '<div class="kv"><span>Expected value</span><b>' + fmtUsd(r[17]) + '</b></div>' +
-      '<div class="kv"><span>Net $/hour</span><b class="' + hrCls + '">' + fmtHourly(r[16]) + '</b></div>' +
-      '<div class="kv"><span>Farm verdict</span><b>' + verdictLabel(r[18]) + '</b></div>' +
+      '<div class="kv"><span>Token odds</span><b>' + Math.round(r[14] * 100) + '%</b></div>' +
+      '<div class="kv"><span>Expected value</span><b>' + fmtUsd(r[16]) + '</b></div>' +
+      '<div class="kv"><span>Net $/hour</span><b class="' + hrCls + '">' + fmtHourly(r[15]) + '</b></div>' +
+      '<div class="kv"><span>Farm verdict</span><b>' + verdictLabel(r[17]) + '</b></div>' +
       '<div class="kv"><span>Category</span><b>' + esc(D.ct[r[3]]) + '</b></div>' +
       '<div class="kv"><span>Chains</span><b>' + chainList(r) + '</b></div>' +
       '<div class="kv"><span>Token status</span><b>Records no token</b></div>' +
       '<div class="kv"><span>Rank</span><b>#' + r[0] + ' of ' + D.rw.length + '</b></div>' +
       '</div>' +
       '<div class="model"><h3>How the value is modelled</h3>' +
-      '<p><code>' + fmtInt(curveVal) + ' curve × ' + r[9].toFixed(2) + ' category adj × ' + r[10].toFixed(4) + ' growth × ' + r[11].toFixed(4) + ' age × ' + r[12].toFixed(4) + ' chains = ' + fmtInt(r[8]) + '</code></p>' +
-      '<p>' + adjText + '; growth follows the 7-day TVL change, age follows how long the protocol has run with no token, and chains follow how many chains it runs on. Token odds come from the no-token clock (see below): a younger protocol with no token still has most of its launch chance ahead of it. Expected value is the implied value × token odds × the assumed farmer share (5% of supply over 50,000 farmers); net $/hour subtracts gas and time at $10/hour over the hold window. The value is this radar\u2019s own claim, not a prediction that a token is issued.</p>' +
+      '<p><code>' + fmtInt(curveVal) + ' curve × ' + r[9].toFixed(4) + ' growth × ' + r[10].toFixed(4) + ' age × ' + r[11].toFixed(4) + ' chains = ' + fmtInt(r[8]) + '</code></p>' +
+      '<p>The curve is the fitted log-log size curve, and it stands alone: no category adjustment — per-category residual adjustments were tried and dropped because out of sample they were neutral-to-negative (see Calibration). Growth follows the 7-day TVL change, age follows how long the protocol has run with no token, and chains follow how many chains it runs on. Token odds come from the no-token clock (see below): a younger protocol with no token still has most of its launch chance ahead of it. Expected value is the implied value × token odds × the assumed farmer share (5% of supply over 50,000 farmers); net $/hour subtracts gas and time at $10/hour over the hold window. The value is this radar\u2019s own claim, not a prediction that a token is issued.</p>' +
       '</div>' +
       '<div class="steps"><h3>Farm plan: eight steps</h3><ol>' +
       steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') +
@@ -242,9 +243,9 @@
     var html = '<div class="wrap">' +
       '<header class="topbar"><div class="brand"><span class="mark"></span><h1>TOKEN <span>RADAR</span></h1></div>' +
       '<div class="top-meta">Snapshot ' + esc(D.ao) + ' · Floor ' + fmtUsd(D.fu) + ' · Model ' + esc(D.mv) + '</div></header>' +
-      '<p class="lede">Every protocol DefiLlama tracks, read once: which ones <b>record no token</b> yet, what a launch would be worth if their record stayed as it is, and <b>how to farm each one</b>. The board covers all ' + D.wz + ' protocols on the snapshot\u2019s watchlist, then the early ones below the floor. Implied value is this radar\u2019s own claim, never a prediction that a token is issued.</p>' +
+      '<p class="lede">Every protocol DefiLlama tracks, read once: which ones <b>record no token</b> yet, what a launch would be worth if their record stayed as it is, and <b>how to farm each one</b>. The board covers all ' + D.ig.wz + ' protocols on the snapshot\u2019s watchlist, then the ' + D.ab + ' rankable protocols above the floor the watchlist leaves out, then the ' + D.ez + ' early ones below the floor. Implied value is this radar\u2019s own claim, never a prediction that a token is issued.</p>' +
       '<div class="facts">' +
-      '<div class="fact"><b>' + D.bz + '</b><span>protocols ranked</span></div>' +
+      '<div class="fact"><b>' + D.rw.length + '</b><span>protocols ranked</span></div>' +
       '<div class="fact"><b>' + D.ig.wcv + '/' + D.ig.wz + '</b><span>watchlist covered</span></div>' +
       '<div class="fact"><b>×' + D.va.lo.fc.toFixed(2) + ' <em>LOO</em></b><span>typical held-out error; ' + Math.round(D.va.lo.w2 * 100) + '% within 2×</span></div>' +
       '<div class="fact"><b>×' + D.va.wf.fc.toFixed(2) + ' <em>walk-forward</em></b><span>earliest half fits, later half tested; ' + Math.round(D.va.wf.w2 * 100) + '% within 2×</span></div>' +
@@ -301,28 +302,33 @@
     }
 
     html += '<section class="section calibration"><h2>Calibration: where the values come from</h2>' +
-      '<p>The core is a log-log size curve fitted by OLS on the snapshot\u2019s ' + D.cp + ' launched protocols: log(market cap) = ' + D.cu.i.toFixed(2) + ' + ' + D.cu.k.toFixed(2) + ' × log(TVL), R² ' + D.cu.r.toFixed(2) + ', residual SD ' + D.cu.d.toFixed(2) + ' in logs. Market cap grows roughly with the square root of TVL, and the scatter is wide — the validation numbers below say how wide. Each category with at least ' + D.mo.mp + ' launched peers gets a residual adjustment (its peers\u2019 mean log-residual, exponentiated); the rest use the global curve alone. The old flat-multiple model is scored on the same data for comparison: leave-one-out ×' + D.va.rl.fc.toFixed(2) + ' (' + Math.round(D.va.rl.w2 * 100) + '% within 2×) and walk-forward ×' + D.va.rf.fc.toFixed(2) + ' (' + Math.round(D.va.rf.w2 * 100) + '% within 2×) — the fitted curve beats it on both.</p>' +
-      '<p><b>Validation, computed by the model on the launched protocols (TVL → market cap only; the growth / age / chains factors are ranking adjustments, not fitted, and are not in the validation).</b> Leave-one-out: refit on the other 127 protocols, predict the held-out one — median error ×' + D.va.lo.fc.toFixed(2) + ', ' + Math.round(D.va.lo.w2 * 100) + '% within 2× (n = ' + D.va.lo.n + '). The bare global curve, without category adjustments, scores ×' + D.va.lc.fc.toFixed(2) + ' (' + Math.round(D.va.lc.w2 * 100) + '% within 2×) — the adjustments are roughly neutral out of sample and are kept as the fitted in-sample calibration. Walk-forward: the ' + D.va.wf.nd + ' launched protocols with a listing date, earliest ' + D.va.wf.nt + ' fit the curve, latest ' + D.va.wf.ne + ' tested — median error ×' + D.va.wf.fc.toFixed(2) + ', ' + Math.round(D.va.wf.w2 * 100) + '% within 2×. Bootstrap (200 refits, fixed seed): slope 90% band ' + D.bo.sl.toFixed(2) + '–' + D.bo.si.toFixed(2) + ', intercept ' + D.bo.il.toFixed(2) + '–' + D.bo.ih.toFixed(2) + ', and a 90% prediction band ×' + D.bo.pb.toFixed(2) + ' wide at the median launched TVL of $' + (D.bo.pt / 1e6).toFixed(1) + 'M.</p>' +
+      '<p>The core is a log-log size curve fitted by OLS on the snapshot\u2019s ' + D.cu.n + ' launched protocols: log(market cap) = ' + D.cu.i.toFixed(2) + ' + ' + D.cu.k.toFixed(2) + ' × log(TVL), R² ' + D.cu.r.toFixed(2) + ', residual SD ' + D.cu.d.toFixed(2) + ' in logs. Market cap grows roughly with the square root of TVL, and the scatter is wide — the validation numbers below say how wide. The curve stands alone: an earlier version multiplied it by a per-category residual adjustment where a category had at least four launched peers, but out of sample the adjustments were neutral-to-negative (leave-one-out ×3.50 with them against ×' + D.va.lo.fc.toFixed(2) + ' without, walk-forward ×3.09 against ×' + D.va.wf.fc.toFixed(2) + '), so this version drops them. Richer fits were tried the same way and failed too: fitted change, chains and age made leave-one-out worse, a quadratic in log(TVL) is a coin flip out of sample, and robust, nearest-neighbour and category-slope fits all scored worse — the scatter is irreducible with the snapshot\u2019s ten fields. The old flat-multiple model is scored on the same data for comparison: leave-one-out ×' + D.va.rl.fc.toFixed(2) + ' (' + Math.round(D.va.rl.w2 * 100) + '% within 2×) and walk-forward ×' + D.va.rf.fc.toFixed(2) + ' (' + Math.round(D.va.rf.w2 * 100) + '% within 2×) — the fitted curve beats it on both.</p>' +
+      '<p><b>Validation, computed by the model on the launched protocols (TVL → market cap only; the growth / age / chains factors are ranking adjustments, not fitted, and are not in the validation).</b> Leave-one-out: refit on the other 127 protocols, predict the held-out one — median error ×' + D.va.lo.fc.toFixed(2) + ', ' + Math.round(D.va.lo.w2 * 100) + '% within 2× (n = ' + D.va.lo.n + '). Walk-forward: the ' + D.va.wf.nd + ' launched protocols with a listing date, earliest ' + D.va.wf.nt + ' fit the curve, latest ' + D.va.wf.ne + ' tested — median error ×' + D.va.wf.fc.toFixed(2) + ', ' + Math.round(D.va.wf.w2 * 100) + '% within 2×. Bootstrap (200 refits, fixed seed): slope 90% band ' + D.bo.sl.toFixed(2) + '–' + D.bo.si.toFixed(2) + ', intercept ' + D.bo.il.toFixed(2) + '–' + D.bo.ih.toFixed(2) + ', and a 90% prediction band ×' + D.bo.pb.toFixed(2) + ' wide at the median launched TVL of $' + (D.bo.pt / 1e6).toFixed(1) + 'M.</p>' +
       '<p><b>Token odds from the no-token clock.</b> Among protocols with a listing date, the share whose record carries a token rises with age and then plateaus at ' + Math.round(D.od.pl * 100) + '% (' + D.od.pn + ' protocols aged ' + Math.round(D.od.bk[D.od.bk.length - 1].ld / 365) + ' years or more). That rise is time-to-launch, not proof an old untokenised protocol is likelier to launch — the snapshot carries no token-launch dates, so no true hazard is identified. The odds used are the remaining chance, (plateau − prevalence) / (1 − prevalence), floored at ' + Math.round(D.od.fl * 100) + '%: ' +
       D.od.bk.map(function (b) {
         var label = b.hd === null ? (b.ld / 365).toFixed(0) + 'y+' : (b.ld === 0 ? 'under ' + Math.round(b.hd / 30) + 'mo' : (b.ld / 365).toFixed(1) + '–' + (b.hd / 365).toFixed(1) + 'y');
         return label + ' ' + Math.round(b.od * 100) + '% (' + Math.round(b.pv * 100) + '% of ' + b.n + ' peers carry a token)';
       }).join('; ') + '. A protocol with no listing date gets ' + Math.round(D.od.ua * 100) + '%, the mean over pre-token protocols of known age.</p>' +
       '<p><b>Farm verdicts costed in $/hour.</b> Stated allocation assumption: an airdrop pool of ' + D.fa.pp + '% of supply shared equally among ' + D.fa.fn.toLocaleString('en-US') + ' qualifying farmers, so one farmer captures ' + (D.fa.al * 100).toFixed(4) + '% of the implied value. Expected value = implied value × token odds × that share. Costs are gas ($' + D.fa.sg + ' to set up + the first action\u2019s chain gas + $' + D.fa.wg + '/week) and time (' + D.fa.sh * 60 + ' minutes to set up + ' + D.fa.wh * 60 + ' minutes a week, valued at $' + D.fa.tv + '/hour) over the hold window. Net $/hour = (expected value − gas − time cost) / hours. Verdict: farm above $' + D.fa.ft + '/hour, thin at $' + D.fa.tt + '–$' + D.fa.ft + ', skip below $0.</p>' +
-      '<div class="panel"><table><thead><tr><th>Category</th><th class="num">Launched peers</th><th class="num">Residual adjustment</th></tr></thead><tbody>' +
-      D.ca.map(function (c) {
-        return '<tr><td>' + esc(c[0]) + '</td><td class="num">' + c[1] + '</td><td class="num">×' + c[2].toFixed(2) + '</td></tr>';
+      '<div class="panel"><table><thead><tr><th>Coverage: every protocol in the snapshot</th><th class="num">Protocols</th></tr></thead><tbody>' +
+      D.cv.map(function (c) {
+        return '<tr><td>' + esc(c[0]) + '</td><td class="num">' + c[1] + '</td></tr>';
       }).join('') +
-      '<tr><td>All launched protocols <span class="muted">(global curve, no adjustment)</span></td><td class="num">' + D.cp + '</td><td class="num">×1.00</td></tr>' +
-      '</tbody></table></div></section>' +
+      '</tbody></table></div>' +
+      '<p><b>Flagged, not hidden.</b> Four of the ' + D.ab + ' above-floor rows look affiliated with a token that already trades or with an exchange — ' +
+      D.fg.map(function (s) {
+        var row = D.rw.find(function (r) { return rowSlug(r) === s; });
+        return row ? esc(row[2]) + ' (#' + row[0] + ')' : esc(s);
+      }).join(', ') +
+      ' — but the snapshot carries no parent-protocol field to prove it, so the rule as written admits them; they are ranked on TVL like any other row, flagged here rather than hand-excluded.</p></section>' +
 
       '<section class="section method"><h2>Method, in one paragraph</h2>' +
-      '<p>Implied value = size curve × category adjustment × growth × age × chains. The curve is log(market cap) = ' + D.cu.i.toFixed(2) + ' + ' + D.cu.k.toFixed(2) + ' × log(TVL), fitted on the ' + D.cp + ' launched protocols; the adjustment is the category\u2019s residual multiplier where it has at least ' + D.mo.mp + ' launched peers, else 1.00. Growth is 1 + 0.40 × the 7-day TVL change, clamped to −50%…+100%. Age is 1 + 0.08 × years since listing, capped at 4 years; a protocol with no listing date counts as 1.00. Chains is 1 + 0.04 per extra chain, capped at 5. Growth, age and chains are hand-set, not refit: the launched data give no defensible refit for them (residual correlations −0.14, −0.02 and +0.09). Token odds come from the no-token clock above, and every farm plan carries its net $/hour and its farm / thin / skip verdict. A protocol ranks when its record carries no token (no market cap, no CoinGecko id, no symbol) and it is not a wrapped, staked or bridged product, not an exchange and not a versioned pool. Above the $50M floor the house watchlist is the authority, because the snapshot carries no parent-protocol field; below it the radar finds the early ones the watchlist does not name.</p></section>' +
+      '<p>Implied value = size curve × growth × age × chains. The curve is log(market cap) = ' + D.cu.i.toFixed(2) + ' + ' + D.cu.k.toFixed(2) + ' × log(TVL), fitted on the ' + D.cu.n + ' launched protocols, and it stands alone — no category adjustment. Growth is 1 + 0.40 × the 7-day TVL change, clamped to −50%…+100%. Age is 1 + 0.08 × years since listing, capped at 4 years; a protocol with no listing date counts as 1.00. Chains is 1 + 0.04 per extra chain, capped at 5. Growth, age and chains are hand-set, not refit: the launched data give no defensible refit for them (residual correlations −0.14, −0.02 and +0.09). Token odds come from the no-token clock above, and every farm plan carries its net $/hour and its farm / thin / skip verdict. A protocol ranks when its record carries no token (no market cap, no CoinGecko id, no symbol) and it is not a wrapped, staked or bridged product, not an exchange and not a versioned pool. The watchlist is the floor, never the ceiling: the board ranks every rankable pre-token protocol, ' + D.ab + ' of them above the $50M floor that the watchlist leaves out and ' + D.ez + ' below it — above the floor the snapshot carries no parent-protocol field, so the rule as written is the authority; the four borderline rows are flagged above, not hidden.</p></section>' +
 
       '<div class="note"><b>Read the board honestly.</b> \u201CRecords no token\u201D means the snapshot\u2019s DefiLlama record carries none: a protocol on this board may still have a token its record does not carry. Implied value is what a launch would be worth if the protocol\u2019s record stayed as it is; it does not predict whether or when a token is issued, and farming never pays to claim: never pay a fee to claim a reward.</div>' +
 
       '<footer><p>Data: ' + esc(D.sr) + ' · Snapshot as of ' + esc(D.ao) + ' · Watchlist floor ' + fmtUsd(D.fu) + '.</p>' +
-      '<p>Token Radar, model ' + esc(D.mv) + ' · ' + D.bz + ' rows · Built from the sealed snapshot alone; the page makes no network request.</p></footer>' +
+      '<p>Token Radar, model ' + esc(D.mv) + ' · ' + D.rw.length + ' rows · Built from the sealed snapshot alone; the page makes no network request.</p></footer>' +
       '</div>';
 
     root.innerHTML = html;
